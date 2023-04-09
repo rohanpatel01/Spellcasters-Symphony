@@ -140,13 +140,7 @@ void Timer3A_Stop(void){
   TIMER3_CTL_R = 0x00000000;  // 10) disable timer3
 }
 
-void Timer3A_Handler(void){
-	GPIO_PORTF_DATA_R ^= 0x02;
-	Data = ADC_In();
-	ADCMail = Data;
-	ADCStatus = 1;
-  TIMER3_ICR_R = TIMER_ICR_TATOCINT;
-}
+
 
 
 
@@ -181,18 +175,19 @@ void PortD_Init(void){
 }
 
 
-
-
 uint32_t Convert(int32_t x){
 	
-	if ( ((172 * -x)/4096 + 163) < 0 ){
+	int value = ((172 * -x)/4096 + 163);
+	
+	
+	if ( value < 0 ){
 		return 0;
 		
-	} else if ( ((172 * -x)/4096 + 163) > 140 ){
+	} else if ( value > 140 ){
 		return 140;
 		
 	} else {
-		return ((172 * -x)/4096 + 163);
+		return (value);
 	}
 	
 }
@@ -203,7 +198,7 @@ struct sprite {
   int32_t y;      // y coordinate
 	int32_t oldX;      
   int32_t oldY;
-  int32_t vx,vy;  // pixels/30Hz
+  int32_t vy, xy;  // pixels/30Hz
   const unsigned short *image; // ptr->image
   const unsigned short *black;
   int32_t life;        // dead (0) : alive (1)
@@ -219,6 +214,123 @@ typedef struct sprite sprite_t;
 
  //{playerX, playerY, playerVelX, playerVelY, player, playerBlack, 1, 20, 21, 1};
 sprite_t playerSprite; // player is a global variable b/c want other functions to access info
+sprite_t playerShootSprite;
+
+uint32_t valueOut = 0;
+
+
+// go to handler
+void Timer3A_Handler(void){
+	GPIO_PORTF_DATA_R ^= 0x02;
+	Data = ADC_In();
+	ADCMail = Data;
+	ADCStatus = 1;
+	
+	playerSprite.oldX = playerSprite.x;
+	
+	valueOut = ADCMail;
+	valueOut = Convert(valueOut);
+	playerSprite.x = valueOut;
+	
+	
+	// buttons
+	static uint32_t lastStateShoot = 0;
+	uint32_t currentStateShoot = GPIO_PORTE_DATA_R & 0x01; // on SW1 PE0
+	static int shootFlag = 0;
+	
+	
+	static uint32_t lastStateJump = 0;
+	uint32_t currentStateJump = GPIO_PORTE_DATA_R & 0x04; // on SW3 PE2
+	
+	
+	static uint32_t lastStateFloat = 0;
+	uint32_t currentStateFloat = GPIO_PORTE_DATA_R & 0x08; // on SW4 PE3
+	static uint32_t originalVY = 0;
+	
+	static int jumpFlag = 0;
+	int maxPlayerJumpHeight = 60; // tallest b/c subtracting y pos to get higher jump
+	static int reachedMaxHeightFlag = 0;
+	
+	// if player is grounded then check for jump button again and don't move player until
+	if (playerSprite.y >= 126){
+		playerSprite.oldY = playerSprite.y; // changed
+		playerSprite.y = 126; // reground player
+		jumpFlag = 0;
+		reachedMaxHeightFlag = 0;
+	}
+	
+	if (currentStateJump != 0 && lastStateJump == 0 && playerSprite.y == 126){
+		GPIO_PORTD_DATA_R ^= 0x02; // toggle led on button input
+		jumpFlag = 1;
+	}
+	
+	if (jumpFlag){
+		
+		if (playerSprite.y > maxPlayerJumpHeight && !reachedMaxHeightFlag){
+			playerSprite.oldY = playerSprite.y;
+			playerSprite.y -= playerSprite.vy;
+			
+		} else if (playerSprite.y <= maxPlayerJumpHeight && !reachedMaxHeightFlag){
+			reachedMaxHeightFlag = 1;
+			playerSprite.oldY = playerSprite.y;
+			
+		} else if (reachedMaxHeightFlag){
+			playerSprite.oldY = playerSprite.y;
+			playerSprite.y += playerSprite.vy;
+		}
+	}
+	
+	// shooting code
+	// have another flag that only lets you shoot once the previous shot is dead
+	
+	if (currentStateShoot != 0 && lastStateShoot == 0 && !shootFlag){
+		GPIO_PORTD_DATA_R ^= 0x01; // toggle led on button input
+		playerShootSprite.life = 1;
+		shootFlag = 1;
+		
+		// spell spawn location
+		playerShootSprite.x = playerSprite.x + playerSprite.w + 2; // spawn fireball infront of player
+		playerShootSprite.y = playerSprite.y;
+		
+	}
+	
+	if (shootFlag){
+		// velocity of spell
+		playerShootSprite.x += playerShootSprite.xy;
+		
+		// erase fireball if gone off screen
+		// also add condition for collision!!!! - collision needed here
+		if (playerShootSprite.x > 128 + playerShootSprite.w){
+			playerShootSprite.life = 0; // stop drawing
+			shootFlag = 0;						  // stop moving
+		}
+	}
+	
+	//if(now0 == 1){// currently is pressed and held down}else{// currently is released}
+	
+	// float ability
+	
+	if (currentStateFloat == 1){
+		
+//		// grab player's original velocity before they float
+//		if (currentStateFloat != 0 && lastStateFloat == 0){
+//			originalVY = playerSprite.vy; // save original velocity 
+//		}
+//		
+//		playerSprite.vy = 2;  //(playerSprite.vy/2) + 1; // reduce the player's jump / fall speed
+//		
+//	} else {
+//		playerSprite.vy = originalVY;
+	}
+	
+	
+
+	lastStateFloat = currentStateFloat;
+	lastStateShoot = currentStateShoot;
+	lastStateJump = currentStateJump;
+	
+  TIMER3_ICR_R = TIMER_ICR_TATOCINT;
+}
 
 
 
@@ -234,71 +346,72 @@ int main(void){
 	PortD_Init(); // LED
 	
 	Timer3A_Init( 666667, 5); // 10hz = 8000000   : 30hz = 2666667  : 60hz = 1333333  : 120hz 666667
-  Timer1_Init(2666667, 5); // sample button at 30Hz
+  Timer1_Init(  666667, 5); // sample button at 30Hz
 	
 	ST7735_FillScreen(0x0000);
 	ST7735_SetRotation(3);
 
 	// variables for game
-	uint32_t valueOut = 0;
-	int32_t playerNewX = 0;
-	int32_t playerNewY = 0;
-	int32_t playerOldX = 0;
-	int32_t playerOldY = 0;
-	int32_t playerVelX = 0;			// move right by 1 pixel
-	int32_t playerVelY = 0;
+	
 	int32_t playerMovedFlag = 0;
 	
-	
-	playerSprite.x = 0;
-	playerSprite.y = 128;
-	
+	// initialize player
+	playerSprite.x = 30;
+	playerSprite.y = 126;
 	playerSprite.oldX = 0;
-	playerSprite.oldY = 128;
-	
-	playerSprite.vx = 1;
-	playerSprite.vy = 0;
+	playerSprite.oldY = 126; // change
+	playerSprite.vy = 7;
+	playerSprite.xy = 0;
 	playerSprite.image = player;
-	playerSprite.black = playerBlack;
+	playerSprite.black = playerBlackSame;
 	playerSprite.w = 20;
 	playerSprite.h = 21;
-	
-	playerSprite.blackW = 24;
-	playerSprite.blackH = 25;
-	
+	playerSprite.blackW = 20; // 24
+	playerSprite.blackH = 21; // 25
 	playerSprite.needDraw = 1;
 	playerSprite.life = 1;
+	
+	// initialize playerShootSprite
+	playerShootSprite.x = 0;
+	playerShootSprite.y = 0;
+	playerShootSprite.oldX = 0;
+	playerShootSprite.oldY = 0;
+	playerShootSprite.vy = 0;
+	playerShootSprite.xy = 2;
+	playerShootSprite.image = orange_fireball;
+	playerShootSprite.black = orange_fireball_black;
+	playerShootSprite.w = 38;
+	playerShootSprite.h = 35;
+	playerShootSprite.blackW = 38;
+	playerShootSprite.blackH = 35;
+	playerShootSprite.needDraw = 1;
+	playerShootSprite.life = 0; // life determines if we draw it, starts with not being drawn
+	
 	
 	EnableInterrupts();
 
 
 	while(1){
 		
+		while(!ADCStatus){}
+		ADCStatus = 0;
+			
+		
 		if (playerSprite.life){
-			
-			while (ADCStatus == 0) {}	
-			valueOut = ADCMail;
-			valueOut = Convert(valueOut);
-			
-			playerSprite.x = valueOut;
-			
-			// erase old player if they moved enough
-			if ( abs(playerSprite.x - playerSprite.oldX) > 2 || abs(playerSprite.y - playerSprite.oldY) > 2 ){
-				ST7735_DrawBitmap(  playerSprite.oldX , playerSprite.oldY , playerSprite.black, playerSprite.blackW , playerSprite.blackH );  // draw new player location
-			}
-
-			if ( abs(playerSprite.x - playerSprite.oldX) > 2 ) { // or player y changes
-				playerSprite.oldX = 	valueOut;
-				ST7735_DrawBitmap(  playerSprite.x , playerSprite.y , playerSprite.image, playerSprite.w, playerSprite.h );
+			if ( (playerSprite.x != playerSprite.oldX) || (playerSprite.y != playerSprite.oldY) ){
 				
-			} else {
-				ST7735_DrawBitmap(  playerSprite.oldX , playerSprite.y , playerSprite.image, playerSprite.w, playerSprite.h );
-
+				ST7735_DrawBitmap(  playerSprite.oldX , playerSprite.oldY , playerSprite.black, playerSprite.blackW , playerSprite.blackH );  // draw new player location
+				ST7735_DrawBitmap( playerSprite.x , playerSprite.y , playerSprite.image, playerSprite.w, playerSprite.h );
 			}
 			
 		}
 		
 		
+		// also include code to erase old image too
+		
+		if (playerShootSprite.life){
+			ST7735_DrawBitmap( playerShootSprite.x , playerShootSprite.y , playerShootSprite.image, playerShootSprite.w, playerShootSprite.h );
+		}
 		
 		ADCStatus = 0;
 	}
