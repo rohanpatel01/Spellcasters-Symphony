@@ -30,7 +30,7 @@ struct sprite {
   int32_t y;      // y coordinate
 	int32_t oldX;      
   int32_t oldY;
-  int32_t vx,vy;  // pixels/30Hz
+  int32_t vy;  // pixels/30Hz
   const unsigned short *image; // ptr->image
   const unsigned short *black;
   int32_t life;        // dead (0) : alive (1)
@@ -45,7 +45,7 @@ struct sprite {
 typedef struct sprite sprite_t;
 
 extern sprite_t playerSprite;
-
+extern sprite_t playerShootSprite;
 
 
 // ***************** Timer1_Init ****************
@@ -73,60 +73,58 @@ volatile int delay;
 
 
 void Timer1A_Handler(void){
-	TIMER1_ICR_R = 0x00000001; // acknowledge the interrupt - correct value to acknowledge??
+	TIMER1_ICR_R = 0x00000001;
 	
 	// variables for shooting
-	static uint32_t lastStateShoot = 0;
-	uint32_t currentStateShoot = GPIO_PORTE_DATA_R & 0x01; // on SW1
-	
-	
-	
-	// variables for jumping
-	static uint32_t lastStateJump = 0;
-	uint32_t currentStateJump = GPIO_PORTE_DATA_R & 0x04; // on SW3
-	
-	static int jumpFlag = 0;
-	int maxPlayerJumpHeight = 102; // tallest b/c subtracting y pos to get higher jump
-	static int reachedMaxHeightFlag = 0;
-	
-	// if player is grounded then check for jump button again and don't move player until
-	if (playerSprite.y == 128){
-		jumpFlag = 0;
-		reachedMaxHeightFlag = 0;
-	}
-	
-	if (currentStateJump != 0 && lastStateJump == 0 && playerSprite.y == 128){
-		GPIO_PORTD_DATA_R ^= 0x02; // toggle led on button input
-		jumpFlag = 1;
-	}
-	
-	if (jumpFlag){
-		
-		if (playerSprite.y > maxPlayerJumpHeight && !reachedMaxHeightFlag){
-			playerSprite.oldY = playerSprite.y;
-			playerSprite.y -= 2;
-			
-		} else if (playerSprite.y == maxPlayerJumpHeight && !reachedMaxHeightFlag){
-			reachedMaxHeightFlag = 1;
-			
-		} else if (reachedMaxHeightFlag){
-			playerSprite.oldY = playerSprite.y;
-			playerSprite.y += 2;
-		}
-	}
-	
-	
-	if (currentStateShoot != 0 && lastStateShoot == 0){
-		GPIO_PORTD_DATA_R ^= 0x01; // toggle led on button input
-	}
-	
-	
-	
-	
-	lastStateShoot = currentStateShoot;
-	lastStateJump = currentStateJump;
-	
-	
+//	static uint32_t lastStateShoot = 0;
+//	uint32_t currentStateShoot = GPIO_PORTE_DATA_R & 0x01; // on SW1
+//	
+//	
+//	
+//	// variables for jumping
+//	static uint32_t lastStateJump = 0;
+//	uint32_t currentStateJump = GPIO_PORTE_DATA_R & 0x04; // on SW3
+//	
+//	static int jumpFlag = 0;
+//	int maxPlayerJumpHeight = 60; // tallest b/c subtracting y pos to get higher jump
+//	static int reachedMaxHeightFlag = 0;
+//	
+//	// if player is grounded then check for jump button again and don't move player until
+//	if (playerSprite.y == 126){
+//		jumpFlag = 0;
+//		reachedMaxHeightFlag = 0;
+//	}
+//	
+//	if (currentStateJump != 0 && lastStateJump == 0 && playerSprite.y == 126){
+//		GPIO_PORTD_DATA_R ^= 0x02; // toggle led on button input
+//		jumpFlag = 1;
+//	}
+//	
+//	if (jumpFlag){
+//		
+//		if (playerSprite.y > maxPlayerJumpHeight && !reachedMaxHeightFlag){
+//			playerSprite.oldY = playerSprite.y;
+//			playerSprite.y -= playerSprite.vy;
+//			
+//		} else if (playerSprite.y <= maxPlayerJumpHeight && !reachedMaxHeightFlag){
+//			reachedMaxHeightFlag = 1;
+//			
+//		} else if (reachedMaxHeightFlag){
+//			playerSprite.oldY = playerSprite.y;
+//			playerSprite.y += playerSprite.vy;
+//		}
+//	}
+//	
+//	
+//	if (currentStateShoot != 0 && lastStateShoot == 0){
+//		GPIO_PORTD_DATA_R ^= 0x01; // toggle led on button input
+//		playerShootSprite.life ^= 1;
+//	}
+//	
+//	
+//	
+//	lastStateShoot = currentStateShoot;
+//	lastStateJump = currentStateJump;
 	
 	
 }
