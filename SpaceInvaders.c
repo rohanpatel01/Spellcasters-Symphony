@@ -368,6 +368,7 @@ void Timer3A_Handler(void){
 		
 	}
 	
+	// control fireball when shot - turn into function that takes sprite param
 	if (shootFlag){
 		// velocity of spell
 		playerShootSprite.x += playerShootSprite.vx; // changed xy to vx
@@ -378,10 +379,6 @@ void Timer3A_Handler(void){
 			playerShootSprite.life = 0; // stop drawing
 			shootFlag = 0;						  // stop moving
 		}
-		
-		
-			
-		
 	}
 		
 	if (currentStateFloat != 0 && playerSprite.y < 126 && tutorialFlag){ 
