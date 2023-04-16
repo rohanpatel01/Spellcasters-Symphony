@@ -38,12 +38,6 @@
 #include "../inc/DAC.h"
 
 
-void DisableInterrupts(void); // Disable interrupts
-void EnableInterrupts(void);  // Enable interrupts
-void Delay100ms(uint32_t count); // time delay in 0.1 seconds
-void numToLCD(int num);				// print a number to the LCD
-
-
 struct sprite {
   int32_t x;      // x coordinate
   int32_t y;      // y coordinate
@@ -57,13 +51,20 @@ struct sprite {
   int32_t w; // width
   int32_t h; // height
 	
+	int reachedMaxHeightFlag;
+	int jumpFlag;
+	
 	int32_t blackW; // width
   int32_t blackH; // height
 	
 };
 typedef struct sprite sprite_t;
 
-
+void DisableInterrupts(void); // Disable interrupts
+void EnableInterrupts(void);  // Enable interrupts
+void Delay100ms(uint32_t count); // time delay in 0.1 seconds
+void numToLCD(int num);				// print a number to the LCD
+void jumpSprite(sprite_t *sprite1);
 int Collision(sprite_t sprite1, sprite_t sprite2);
 
 
@@ -158,13 +159,11 @@ const char *Phrases[3][4]={
   {Language_English,Language_Spanish,Language_Portuguese,Language_French}
 };
 
-
-
 // global variables
 uint32_t Data;        // 12-bit ADC
 uint32_t Position;    // 32-bit fixed-point 0.001 cm
 uint32_t ADCMail;			// mailbox for ISR and main program
-
+int maxPlayerJumpHeight = 60; // tallest b/c subtracting y pos to get higher jump
 
 volatile uint32_t ADCStatus;
 
@@ -190,12 +189,6 @@ void Timer3A_Stop(void){
   NVIC_DIS1_R = 1<<(35-32);   // 9) disable interrupt 35 in NVIC
   TIMER3_CTL_R = 0x00000000;  // 10) disable timer3
 }
-
-
-
-
-
-
 
 void PortF_Init(void){
   volatile int delay;
@@ -290,9 +283,10 @@ void Timer3A_Handler(void){
 	uint32_t currentStateFloat = GPIO_PORTE_DATA_R & 0x08; // on SW4 PE3
 	static uint32_t originalVY = 0;
 	
-	static int jumpFlag = 0;
-	int maxPlayerJumpHeight = 60; // tallest b/c subtracting y pos to get higher jump
-	static int reachedMaxHeightFlag = 0;
+	//static int playerJumpFlag = 0;
+	static int enemyJump = 0;
+
+	//static int reachedMaxHeightFlag = 0;
 	
 	
 	// values needed for enemy movement
@@ -300,14 +294,26 @@ void Timer3A_Handler(void){
 	static int maxValue = 200;
 	static int randomValue = 0; // generates random num from [0, maxValue]
 	
-	// reset player on grounded
+	
+//	// reset player on grounded
 	if (playerSprite.y >= 126){
 		playerSprite.oldY = playerSprite.y; // changed
 		playerSprite.y = 126; // reground player
-		jumpFlag = 0;
-		reachedMaxHeightFlag = 0;
+		playerSprite.jumpFlag = 0;
+		playerSprite.reachedMaxHeightFlag = 0;
 		//playerSprite.vy = originalVY; // changed on float
 	}
+	
+	// reset enemy on grounded
+	if (enemySprite.y >= 126){
+		enemySprite.oldY = enemySprite.y; // changed
+		enemySprite.y = 126; // reground player
+		enemySprite.jumpFlag = 0;
+		enemySprite.reachedMaxHeightFlag = 0;
+		//playerSprite.vy = originalVY; // changed on float
+	}
+	
+	
 	
 	// finish tutorial
 	if (!tutorialFlag && currentStateJump != 0 && lastStateJump == 0 && languageSelectionFlag){
@@ -328,29 +334,15 @@ void Timer3A_Handler(void){
 		languageSelectionFlag = 1;
 	}
 	
-	
-	
-	
 	if (currentStateJump != 0 && lastStateJump == 0 && playerSprite.y == 126 && tutorialFlag){
 		GPIO_PORTD_DATA_R ^= 0x02; // toggle led on button input
-		jumpFlag = 1;
+		playerSprite.jumpFlag = 1;
 		Wave_Jump();
+		
 	}
 	
-	if (jumpFlag){
-		
-		if (playerSprite.y > maxPlayerJumpHeight && !reachedMaxHeightFlag){
-			playerSprite.oldY = playerSprite.y;
-			playerSprite.y -= playerSprite.vy;
-			
-		} else if (playerSprite.y <= maxPlayerJumpHeight && !reachedMaxHeightFlag){
-			reachedMaxHeightFlag = 1;
-			playerSprite.oldY = playerSprite.y;
-			
-		} else if (reachedMaxHeightFlag){
-			playerSprite.oldY = playerSprite.y;
-			playerSprite.y += playerSprite.vy;
-		}
+	if (playerSprite.jumpFlag){
+		jumpSprite(&playerSprite);
 	}
 	
 	// shooting code
@@ -380,6 +372,8 @@ void Timer3A_Handler(void){
 			shootFlag = 0;						  // stop moving
 		}
 	}
+	
+	// insert shoot function call here
 		
 	if (currentStateFloat != 0 && playerSprite.y < 126 && tutorialFlag){ 
 		playerSprite.vy = 1;
@@ -399,13 +393,24 @@ void Timer3A_Handler(void){
 	// changed < to >
 	if ((randomValue > maxValue - 4) && tutorialFlag){ 
 		enemySprite.vx *= -1;
-
+		enemySprite.jumpFlag = 1;
+	}
+	
+	// enemy randomly jumps
+//	randomValue = (Random32()>>16) % maxValue;
+//	if ((randomValue > -4) && tutorialFlag){
+//		enemySprite.jumpFlag = 1;
+//	}
+	
+	if (enemySprite.jumpFlag){
+		jumpSprite(&enemySprite);
 	}
 	
 	// restrict enemy
 	// (160 - enemySprite.w)
 	if ( !( (enemySprite.x + enemySprite.vx) > 128 ) && ( !( (enemySprite.x + enemySprite.vx) < enemySprite.w)) && tutorialFlag){
 		enemySprite.x += enemySprite.vx;
+	
 		
 	} else if (enemySprite.x >= 128 || enemySprite.x <= enemySprite.w){ // if player is at edge immeditely move different direction
 		enemySprite.vx *= -1;
@@ -440,7 +445,7 @@ int main(void){
   Output_Init();
 	ST7735_InitR(INITR_BLACKTAB); //INITR_REDTAB
 	ADC_Init();	
-	PortF_Init();	//
+	PortF_Init();	
 	PortE_Init(); // switch 
 	PortD_Init(); // LED
 	Wave_Init(); // initializes timer2A for sound and does DAC init
@@ -488,7 +493,7 @@ int main(void){
 	enemySprite.y = 126;
 	enemySprite.oldX = 80;
 	enemySprite.oldY = 126;
-	enemySprite.vy = 0;
+	enemySprite.vy = 7;
 	enemySprite.vx = 1;
 	enemySprite.image = enemy;
 	enemySprite.black = enemyBlack;
@@ -503,44 +508,48 @@ int main(void){
 	EnableInterrupts();
 	
 	// language selection
-	while (!languageSelectionFlag){
-		ST7735_DrawString(1, 3, english_Selection , 255);
-		ST7735_DrawString(1, 7, french_Selection , 255);
-	}
-	
-	// title screen for game - create and display image 
-	
-	ST7735_FillScreen(0x0000);
-	Delay100ms(10);
-	
-	while (!tutorialFlag){
-		
-		if (isEnglish){
-			
-			ST7735_DrawString(1, 1, english_jump_Instruction , 255);
-			ST7735_DrawString(1, 2, english_shoot_Instruction , 255);
-			ST7735_DrawString(1, 3, english_float_Instruction , 255);
-			ST7735_DrawString(1, 4, english_objective_Instruction , 255);
-			ST7735_DrawString(1, 5, english_continue_Instruction , 255);
+//	while (!languageSelectionFlag){
+//		ST7735_DrawString(1, 3, english_Selection , 255);
+//		ST7735_DrawString(1, 7, french_Selection , 255);
+//	}
+//	
+//	// title screen for game - create and display image 
+//	
+//	ST7735_FillScreen(0x0000);
+//	Delay100ms(10);
+//	
+//	while (!tutorialFlag){
+//		
+//		if (isEnglish){
+//			
+//			ST7735_DrawString(1, 1, english_jump_Instruction , 255);
+//			ST7735_DrawString(1, 2, english_shoot_Instruction , 255);
+//			ST7735_DrawString(1, 3, english_float_Instruction , 255);
+//			ST7735_DrawString(1, 4, english_objective_Instruction , 255);
+//			ST7735_DrawString(1, 5, english_continue_Instruction , 255);
 
-			
-			// french_continue_Instruction
-			
-		} else {
-			
-			ST7735_DrawString(1, 1, french_jump_Instruction , 255);
-			ST7735_DrawString(1, 2, french_shoot_Instruction , 255);
-			ST7735_DrawString(1, 3, french_float_Instruction , 255);
-			ST7735_DrawString(1, 4, french_objective_Instruction , 255);
-			ST7735_DrawString(1, 5, french_objective_Instruction , 255);
-			
-		}
-	}
+//			
+//			// french_continue_Instruction
+//			
+//		} else {
+//			
+//			ST7735_DrawString(1, 1, french_jump_Instruction , 255);
+//			ST7735_DrawString(1, 2, french_shoot_Instruction , 255);
+//			ST7735_DrawString(1, 3, french_float_Instruction , 255);
+//			ST7735_DrawString(1, 4, french_objective_Instruction , 255);
+//			ST7735_DrawString(1, 5, french_objective_Instruction , 255);
+//			
+//		}
+//	}
+//	
+//	
+//	ST7735_FillScreen(0x0000);
+//	Delay100ms(10);
 	
 	
-	ST7735_FillScreen(0x0000);
-	Delay100ms(10);
-	
+	// for testing
+	tutorialFlag = 1;
+	languageSelectionFlag = 1;
 	
 	while(!gameOverFlag && scoreNum < 10){
 		
@@ -566,6 +575,7 @@ int main(void){
 		
 		// draw enemy
 		if (enemySprite.life){
+			ST7735_DrawBitmap( enemySprite.oldX , enemySprite.oldY , enemySprite.black, enemySprite.blackW , enemySprite.blackH );  // draw new player location
 			ST7735_DrawBitmap( enemySprite.x , enemySprite.y , enemySprite.image, enemySprite.w, enemySprite.h );
 		}
 		
@@ -622,9 +632,23 @@ int Collision(sprite_t sprite1, sprite_t sprite2){
 	
 }
 
+// struct player *inventory
 
-
-
+void jumpSprite(sprite_t *sprite1){
+	
+	if ((*sprite1).y > maxPlayerJumpHeight && !(*sprite1).reachedMaxHeightFlag){
+			(*sprite1).oldY = (*sprite1).y;
+			(*sprite1).y -= (*sprite1).vy;
+			
+		} else if ((*sprite1).y <= maxPlayerJumpHeight && !(*sprite1).reachedMaxHeightFlag){
+			(*sprite1).reachedMaxHeightFlag = 1;
+			(*sprite1).oldY = (*sprite1).y;
+			
+		} else if ((*sprite1).reachedMaxHeightFlag){
+			(*sprite1).oldY = (*sprite1).y;
+			(*sprite1).y += (*sprite1).vy;
+		}
+}
 
 
 
