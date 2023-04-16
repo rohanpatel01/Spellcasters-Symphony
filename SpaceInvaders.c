@@ -263,6 +263,7 @@ void Timer3A_Handler(void){
 	ADCStatus = 1;
 	
 	playerSprite.oldX = playerSprite.x;
+	enemySprite.oldX = enemySprite.x;
 	
 	valueOut = ADCMail;
 	valueOut = Convert(valueOut);
@@ -496,7 +497,7 @@ int main(void){
 	enemySprite.vy = 7;
 	enemySprite.vx = 1;
 	enemySprite.image = enemy;
-	enemySprite.black = enemyBlack;
+	enemySprite.black = blackEnemy;
 	enemySprite.w = 25;
 	enemySprite.h = 21;
 	enemySprite.blackW = 25;
@@ -575,8 +576,10 @@ int main(void){
 		
 		// draw enemy
 		if (enemySprite.life){
-			ST7735_DrawBitmap( enemySprite.oldX , enemySprite.oldY , enemySprite.black, enemySprite.blackW , enemySprite.blackH );  // draw new player location
-			ST7735_DrawBitmap( enemySprite.x , enemySprite.y , enemySprite.image, enemySprite.w, enemySprite.h );
+			if ( (enemySprite.x != enemySprite.oldX) || (enemySprite.y != enemySprite.oldY) ){
+				ST7735_DrawBitmap( enemySprite.oldX , enemySprite.oldY , enemySprite.black, enemySprite.blackW , enemySprite.blackH );  // draw new player location
+				ST7735_DrawBitmap( enemySprite.x , enemySprite.y , enemySprite.image, enemySprite.w, enemySprite.h );
+			}
 		}
 		
 		if (enemyKilledFlag){
@@ -608,7 +611,7 @@ int main(void){
 		//Wave_Killed();
 	}
 	
-
+	
 }
 
 
@@ -631,8 +634,6 @@ int Collision(sprite_t sprite1, sprite_t sprite2){
 	return !(sprite1X1 > sprite2X2 || sprite1X2 < sprite2X1 || sprite1Y1 < sprite2Y2 || sprite1Y2 > sprite2Y1);
 	
 }
-
-// struct player *inventory
 
 void jumpSprite(sprite_t *sprite1){
 	
