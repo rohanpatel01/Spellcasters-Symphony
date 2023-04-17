@@ -22,7 +22,6 @@
 // LED on PD1
 // LED on PD0
 
-
 #include <stdint.h>
 #include <stdlib.h>
 #include "../inc/tm4c123gh6pm.h"
@@ -51,11 +50,16 @@ struct sprite {
   int32_t w; // width
   int32_t h; // height
 	
+	int isPlayer;
+	
 	int reachedMaxHeightFlag;
 	int jumpFlag;
+	int shootFlag;
 	
 	int32_t blackW; // width
   int32_t blackH; // height
+	
+	struct sprite* shootSpritePointer; // pointer to sprite of shootSprite
 	
 };
 typedef struct sprite sprite_t;
@@ -66,44 +70,7 @@ void Delay100ms(uint32_t count); // time delay in 0.1 seconds
 void numToLCD(int num);				// print a number to the LCD
 void jumpSprite(sprite_t *sprite1);
 int Collision(sprite_t sprite1, sprite_t sprite2);
-
-
-int main1(void){
-  DisableInterrupts();
-  TExaS_Init(NONE);       // Bus clock is 80 MHz 
-  Random_Init(1);
-
-  Output_Init();
-  ST7735_FillScreen(0x0000);            // set screen to black
-  
-  ST7735_DrawBitmap(22, 159, PlayerShip0, 18,8); // player ship bottom
-  ST7735_DrawBitmap(53, 151, Bunker0, 18,5);
-  ST7735_DrawBitmap(42, 159, PlayerShip1, 18,8); // player ship bottom
-  ST7735_DrawBitmap(62, 159, PlayerShip2, 18,8); // player ship bottom
-  ST7735_DrawBitmap(82, 159, PlayerShip3, 18,8); // player ship bottom
-
-  ST7735_DrawBitmap(0, 9, SmallEnemy10pointA, 16,10);
-  ST7735_DrawBitmap(20,9, SmallEnemy10pointB, 16,10);
-  ST7735_DrawBitmap(40, 9, SmallEnemy20pointA, 16,10);
-  ST7735_DrawBitmap(60, 9, SmallEnemy20pointB, 16,10);
-  ST7735_DrawBitmap(80, 9, SmallEnemy30pointA, 16,10);
-  ST7735_DrawBitmap(100, 9, SmallEnemy30pointB, 16,10);
-
-  Delay100ms(50);              // delay 5 sec at 80 MHz
-
-  ST7735_FillScreen(0x0000);   // set screen to black
-  ST7735_SetCursor(1, 1);
-  ST7735_OutString("GAME OVER");
-  ST7735_SetCursor(1, 2);
-  ST7735_OutString("Nice try,");
-  ST7735_SetCursor(1, 3);
-  ST7735_OutString("Earthling!");
-  ST7735_SetCursor(2, 4);
-  ST7735_OutUDec(1234);
-  while(1){
-  }
-
-}
+void shootSprite(sprite_t *sprite);
 
 
 // You can't use this timer, it is here for starter code only 
@@ -242,6 +209,7 @@ uint32_t Convert(int32_t x){
 sprite_t playerSprite; // player is a global variable b/c want other functions to access info
 sprite_t playerShootSprite;
 sprite_t enemySprite;
+sprite_t enemyShootSprite;
 
 uint32_t valueOut = 0;
 int gameOverFlag = 0;
@@ -273,12 +241,10 @@ void Timer3A_Handler(void){
 	// buttons
 	static uint32_t lastStateShoot = 0;
 	uint32_t currentStateShoot = GPIO_PORTE_DATA_R & 0x01; // on SW1 PE0
-	static int shootFlag = 0;
-	
+	//static int shootFlag = 0;
 	
 	static uint32_t lastStateJump = 0;
 	uint32_t currentStateJump = GPIO_PORTE_DATA_R & 0x04; // on SW3 PE2
-	
 	
 	static uint32_t lastStateFloat = 0;
 	uint32_t currentStateFloat = GPIO_PORTE_DATA_R & 0x08; // on SW4 PE3
@@ -302,7 +268,6 @@ void Timer3A_Handler(void){
 		playerSprite.y = 126; // reground player
 		playerSprite.jumpFlag = 0;
 		playerSprite.reachedMaxHeightFlag = 0;
-		//playerSprite.vy = originalVY; // changed on float
 	}
 	
 	// reset enemy on grounded
@@ -311,7 +276,6 @@ void Timer3A_Handler(void){
 		enemySprite.y = 126; // reground player
 		enemySprite.jumpFlag = 0;
 		enemySprite.reachedMaxHeightFlag = 0;
-		//playerSprite.vy = originalVY; // changed on float
 	}
 	
 	
@@ -349,33 +313,23 @@ void Timer3A_Handler(void){
 	// shooting code
 	// have another flag that only lets you shoot once the previous shot is dead
 	
-	if (currentStateShoot != 0 && lastStateShoot == 0 && !shootFlag && tutorialFlag){
+	if (currentStateShoot != 0 && lastStateShoot == 0 && !playerSprite.shootFlag && tutorialFlag){
 		GPIO_PORTD_DATA_R ^= 0x01; // toggle led on button input
-		playerShootSprite.life = 1;
-		shootFlag = 1;
+		(*playerSprite.shootSpritePointer).life = 1;
+		playerSprite.shootFlag = 1;
 		Wave_Shoot();
 		
 		// spell spawn location
-		playerShootSprite.x = playerSprite.x + playerSprite.w + 2; // spawn fireball infront of player
-		playerShootSprite.y = playerSprite.y;
-		
+		(*playerSprite.shootSpritePointer).x = playerSprite.x + playerSprite.w + 2; // spawn fireball infront of player
+		(*playerSprite.shootSpritePointer).y = playerSprite.y;
 	}
 	
-	// control fireball when shot - turn into function that takes sprite param
-	if (shootFlag){
+	// control fireball when shot
+	if (playerSprite.shootFlag){
 		// velocity of spell
-		playerShootSprite.x += playerShootSprite.vx; // changed xy to vx
-		
-		// erase fireball if gone off screen
-		// also add condition for collision!!!! - collision needed here
-		if (playerShootSprite.x > 128 + playerShootSprite.w){
-			playerShootSprite.life = 0; // stop drawing
-			shootFlag = 0;						  // stop moving
-		}
+		shootSprite(&playerSprite);
 	}
 	
-	// insert shoot function call here
-		
 	if (currentStateFloat != 0 && playerSprite.y < 126 && tutorialFlag){ 
 		playerSprite.vy = 1;
 		
@@ -384,27 +338,34 @@ void Timer3A_Handler(void){
 		playerSprite.vy = playerSprite.originalVy;
 	}
 	
-	
 	// enemy AI
   randomValue = (Random32()>>16) % maxValue; 	// continuously create a new random value
 
-	// 2 is the value that determines how often we change directions
-	// if 2 is greater then we will change more often
-	// changed xy to vx
-	// changed < to >
-	if ((randomValue > maxValue - 4) && tutorialFlag){ 
+	// enemy randomly changes direction and jumps // from !enemySprite.jumpFlag to see grounded
+	if ((randomValue > maxValue - 4) && enemySprite.y == 126 && tutorialFlag ){ 
 		enemySprite.vx *= -1;
 		enemySprite.jumpFlag = 1;
 	}
 	
-	// enemy randomly jumps
-//	randomValue = (Random32()>>16) % maxValue;
-//	if ((randomValue > -4) && tutorialFlag){
-//		enemySprite.jumpFlag = 1;
-//	}
-	
+	// enemy jump
 	if (enemySprite.jumpFlag){
 		jumpSprite(&enemySprite);
+	}
+	
+	// enemy randomly shoots
+	randomValue = (Random32()>>16) % maxValue;
+	if ((randomValue > maxValue - 4) && tutorialFlag && !enemySprite.shootFlag){
+		enemySprite.shootFlag = 1;
+		(*enemySprite.shootSpritePointer).life = 1;
+//		Wave_Shoot();
+	
+		(*enemySprite.shootSpritePointer).x = enemySprite.x - enemySprite.w - 2; // spawn fireball infront of player
+		(*enemySprite.shootSpritePointer).y = enemySprite.y;
+	}
+	
+	// enemy shoot
+	if (enemySprite.shootFlag){
+		shootSprite(&enemySprite);
 	}
 	
 	// restrict enemy
@@ -412,27 +373,26 @@ void Timer3A_Handler(void){
 	if ( !( (enemySprite.x + enemySprite.vx) > 128 ) && ( !( (enemySprite.x + enemySprite.vx) < enemySprite.w)) && tutorialFlag){
 		enemySprite.x += enemySprite.vx;
 	
-		
-	} else if (enemySprite.x >= 128 || enemySprite.x <= enemySprite.w){ // if player is at edge immeditely move different direction
+		// make enemy stay a bit back
+	} else if (enemySprite.x >= 128 || enemySprite.x <= 30 ){ // if player is at edge immeditely move different direction
 		enemySprite.vx *= -1;
 		
 	}
 	
 	// detect collision between player and enemy --> end game if true
-	if ( Collision(playerSprite, enemySprite) ){
+	if ( Collision(playerSprite, enemySprite) || Collision( (*enemySprite.shootSpritePointer), playerSprite )   ){
 		// toggle led if overlap
 		GPIO_PORTD_DATA_R ^= 0x01;
 		gameOverFlag = 1;
 	}
 
-	if (Collision(playerShootSprite, enemySprite)){
+	if (Collision( (*playerSprite.shootSpritePointer), enemySprite)){
 		GPIO_PORTD_DATA_R ^= 0x01;
 		enemyKilledFlag = 1;
-		
 	}
 	
 	lastStateFloat = currentStateFloat;
-	lastStateShoot = currentStateShoot;
+	lastStateShoot = currentStateShoot; 
 	lastStateJump = currentStateJump;
 	
   TIMER3_ICR_R = TIMER_ICR_TATOCINT;
@@ -451,13 +411,28 @@ int main(void){
 	PortD_Init(); // LED
 	Wave_Init(); // initializes timer2A for sound and does DAC init
 	
-	Timer3A_Init( 1333333, 5); // 10hz = 8000000   : 30hz = 2666667  : 60hz = 1333333  : 120hz 666667
-  Timer1_Init(  1333333, 5); // sample button at 30Hz
+	Timer3A_Init( 1333333, 5 ); // 10hz = 8000000   : 30hz = 2666667  : 60hz = 1333333  : 120hz 666667
+  Timer1_Init(  1333333, 5 ); // sample button at 30Hz
 	
 	ST7735_FillScreen(0x0000);
 	ST7735_SetRotation(3);
 	
 	int32_t playerMovedFlag = 0;
+	
+	// initialize playerShootSprite
+	playerShootSprite.x = 0;
+	playerShootSprite.y = 0;
+	playerShootSprite.oldX = 0;
+	playerShootSprite.oldY = 0;
+	playerShootSprite.vy = 0;
+	playerShootSprite.vx = 2;
+	playerShootSprite.image = orange_fireball_small;
+	playerShootSprite.black = orange_fireball_small_black;
+	playerShootSprite.w = 21;
+	playerShootSprite.h = 18;
+	playerShootSprite.blackW = 21;
+	playerShootSprite.blackH = 18;
+	playerShootSprite.life = 0; // life determines if we draw it, starts with not being drawn
 	
 	// initialize player
 	playerSprite.x = 0;
@@ -474,27 +449,29 @@ int main(void){
 	playerSprite.blackW = 20; // 24
 	playerSprite.blackH = 21; // 25
 	playerSprite.life = 1;
+	playerSprite.isPlayer = 1;
 	
-	// initialize playerShootSprite
-	playerShootSprite.x = 0;
-	playerShootSprite.y = 0;
-	playerShootSprite.oldX = 0;
-	playerShootSprite.oldY = 0;
-	playerShootSprite.vy = 0;
-	playerShootSprite.vx = 2;
-	playerShootSprite.image = orange_fireball;
-	playerShootSprite.black = orange_fireball_black;
-	playerShootSprite.w = 38;
-	playerShootSprite.h = 35;
-	playerShootSprite.blackW = 38;
-	playerShootSprite.blackH = 35;
-	playerShootSprite.life = 0; // life determines if we draw it, starts with not being drawn
+	playerSprite.shootSpritePointer = &playerShootSprite;
 	
-	enemySprite.x = 80;
+	enemyShootSprite.x = 0;
+	enemyShootSprite.y = 0;
+	enemyShootSprite.oldX = 0;
+	enemyShootSprite.oldY = 0;
+	enemyShootSprite.vy = 0;
+	enemyShootSprite.vx = 2;
+	enemyShootSprite.image = orange_fireball_small_enemy;
+	enemyShootSprite.black = orange_fireball_small_black;
+	enemyShootSprite.w = 21;
+	enemyShootSprite.h = 18;
+	enemyShootSprite.blackW = 21;
+	enemyShootSprite.blackH = 18;
+	enemyShootSprite.life = 0;
+
+	enemySprite.x = 110;
 	enemySprite.y = 126;
 	enemySprite.oldX = 80;
 	enemySprite.oldY = 126;
-	enemySprite.vy = 7;
+	enemySprite.vy = 4;
 	enemySprite.vx = 1;
 	enemySprite.image = enemy;
 	enemySprite.black = blackEnemy;
@@ -503,50 +480,51 @@ int main(void){
 	enemySprite.blackW = 25;
 	enemySprite.blackH = 21;
 	enemySprite.life = 1;
+	enemySprite.isPlayer = 0; // not the player - used for shooting
+	
+	enemySprite.shootSpritePointer = &enemyShootSprite;
 	
 	Random_Init(NVIC_ST_CURRENT_R);
 
 	EnableInterrupts();
 	
 	// language selection
-//	while (!languageSelectionFlag){
-//		ST7735_DrawString(1, 3, english_Selection , 255);
-//		ST7735_DrawString(1, 7, french_Selection , 255);
-//	}
-//	
-//	// title screen for game - create and display image 
-//	
-//	ST7735_FillScreen(0x0000);
-//	Delay100ms(10);
-//	
-//	while (!tutorialFlag){
-//		
-//		if (isEnglish){
-//			
-//			ST7735_DrawString(1, 1, english_jump_Instruction , 255);
-//			ST7735_DrawString(1, 2, english_shoot_Instruction , 255);
-//			ST7735_DrawString(1, 3, english_float_Instruction , 255);
-//			ST7735_DrawString(1, 4, english_objective_Instruction , 255);
-//			ST7735_DrawString(1, 5, english_continue_Instruction , 255);
-
-//			
-//			// french_continue_Instruction
-//			
-//		} else {
-//			
-//			ST7735_DrawString(1, 1, french_jump_Instruction , 255);
-//			ST7735_DrawString(1, 2, french_shoot_Instruction , 255);
-//			ST7735_DrawString(1, 3, french_float_Instruction , 255);
-//			ST7735_DrawString(1, 4, french_objective_Instruction , 255);
-//			ST7735_DrawString(1, 5, french_objective_Instruction , 255);
-//			
-//		}
-//	}
-//	
-//	
-//	ST7735_FillScreen(0x0000);
-//	Delay100ms(10);
+	while (!languageSelectionFlag){
+		ST7735_DrawString(1, 3, english_Selection , 255);
+		ST7735_DrawString(1, 7, french_Selection , 255);
+	}
 	
+	// title screen for game - create and display image 
+	
+	ST7735_FillScreen(0x0000);
+	Delay100ms(10);
+	
+	while (!tutorialFlag){
+		
+		if (isEnglish){
+			
+			ST7735_DrawString(1, 1, english_jump_Instruction , 255);
+			ST7735_DrawString(1, 2, english_shoot_Instruction , 255);
+			ST7735_DrawString(1, 3, english_float_Instruction , 255);
+			ST7735_DrawString(1, 4, english_objective_Instruction , 255);
+			ST7735_DrawString(1, 5, english_continue_Instruction , 255);
+
+			
+			// french_continue_Instruction
+			
+		} else {
+			
+			ST7735_DrawString(1, 1, french_jump_Instruction , 255);
+			ST7735_DrawString(1, 2, french_shoot_Instruction , 255);
+			ST7735_DrawString(1, 3, french_float_Instruction , 255);
+			ST7735_DrawString(1, 4, french_objective_Instruction , 255);
+			ST7735_DrawString(1, 5, french_objective_Instruction , 255);
+			
+		}
+	}
+	
+	
+	ST7735_FillScreen(0x0000);	
 	
 	// for testing
 	tutorialFlag = 1;
@@ -569,9 +547,10 @@ int main(void){
 				ST7735_DrawBitmap( playerSprite.x , playerSprite.y , playerSprite.image, playerSprite.w, playerSprite.h );
 			}
 		}
+		
 		// draw player shot
-		if (playerShootSprite.life){
-			ST7735_DrawBitmap( playerShootSprite.x , playerShootSprite.y , playerShootSprite.image, playerShootSprite.w, playerShootSprite.h );
+		if ((*playerSprite.shootSpritePointer).life){
+			ST7735_DrawBitmap( (*playerSprite.shootSpritePointer).x , (*playerSprite.shootSpritePointer).y , (*playerSprite.shootSpritePointer).image, (*playerSprite.shootSpritePointer).w, (*playerSprite.shootSpritePointer).h );
 		}
 		
 		// draw enemy
@@ -581,15 +560,48 @@ int main(void){
 				ST7735_DrawBitmap( enemySprite.x , enemySprite.y , enemySprite.image, enemySprite.w, enemySprite.h );
 			}
 		}
+		// draw enemy shot
+		if ((*enemySprite.shootSpritePointer).life){
+			ST7735_DrawBitmap( (*enemySprite.shootSpritePointer).x , (*enemySprite.shootSpritePointer).y , (*enemySprite.shootSpritePointer).image, (*enemySprite.shootSpritePointer).w, (*enemySprite.shootSpritePointer).h );
+		}
 		
 		if (enemyKilledFlag){
-			
-			scoreNum++;
-			ST7735_DrawBitmap(0, 127, smallSkull, 61, 80);
 			Wave_Killed();
-			Delay100ms(10);
-			enemyKilledFlag = 0;
+			ST7735_DrawBitmap(0, 127, smallSkull, 61, 80);
+			//Delay100ms(5);
 			ST7735_FillScreen(0x0000);
+			DisableInterrupts();
+			scoreNum++;
+			
+			enemyKilledFlag = 0;
+			
+			// reset enemy position
+			enemySprite.x = 110;
+			enemySprite.y = 126;
+			enemySprite.oldX = 80;
+			enemySprite.oldY = 126;
+			
+			// reset starting position for player
+			playerSprite.x = 0;
+			playerSprite.y = 126;
+			playerSprite.oldX = 0;
+			playerSprite.oldY = 126;
+			
+			// remove spells on screen
+			(*playerSprite.shootSpritePointer).life = 0;
+			(*playerSprite.shootSpritePointer).x = 0;
+			(*playerSprite.shootSpritePointer).y = 0;
+			
+			(*enemySprite.shootSpritePointer).life = 0;
+			(*enemySprite.shootSpritePointer).x = 0;
+			(*enemySprite.shootSpritePointer).y = 0;
+			
+			//playerSprite.shootFlag = 1;
+			playerSprite.shootFlag = 0; // allow player to shoot
+			// also try just making fireball spawn in top right 
+			// b/c what could be happening is waiting for fireball to move across screen and reset the flag after
+			
+			EnableInterrupts();
 			
 		}
 		
@@ -602,8 +614,7 @@ int main(void){
 	if (gameOverFlag){
 		Wave_Killed();
 		ST7735_FillScreen(0x0000);
-		Delay100ms(15);
-		ST7735_DrawBitmap(0, 127, smallSkull, 61, 80);
+		ST7735_DrawBitmap(45, 105, smallSkull, 61, 80);
 	}
 	
 	// win
@@ -649,6 +660,27 @@ void jumpSprite(sprite_t *sprite1){
 			(*sprite1).oldY = (*sprite1).y;
 			(*sprite1).y += (*sprite1).vy;
 		}
+}
+
+void shootSprite(sprite_t *sprite){	
+	
+	if ((*sprite).isPlayer){ // player shoots to the right
+		(*(*sprite).shootSpritePointer).x += (*(*sprite).shootSpritePointer).vx;
+		// erase fireball if gone off screen
+		if ( (*(*sprite).shootSpritePointer).x > 160 + (*(*sprite).shootSpritePointer).w){ 
+			(*(*sprite).shootSpritePointer).life = 0;
+			(*sprite).shootFlag = 0;
+		}
+		
+	} else { // enemy shoots to the left
+		(*(*sprite).shootSpritePointer).x -= (*(*sprite).shootSpritePointer).vx;
+		// erase fireball if gone off screen
+		if ((*(*sprite).shootSpritePointer).x < 0 - (*(*sprite).shootSpritePointer).w){
+			(*(*sprite).shootSpritePointer).life = 0;
+			(*sprite).shootFlag = 0;
+		}
+	}
+	
 }
 
 
