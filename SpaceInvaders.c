@@ -215,7 +215,7 @@ uint32_t valueOut = 0;
 int gameOverFlag = 0;
 int enemyKilledFlag = 0;
 
-uint32_t scoreNum = 0;
+uint32_t scoreNum = 0; // testing
 char scoreNumString;
 
 int languageSelectionFlag = 0;
@@ -567,8 +567,6 @@ int main(void){
 		
 		if (enemyKilledFlag){
 			Wave_Killed();
-			ST7735_DrawBitmap(0, 127, smallSkull, 61, 80);
-			//Delay100ms(5);
 			ST7735_FillScreen(0x0000);
 			DisableInterrupts();
 			scoreNum++;
@@ -618,11 +616,9 @@ int main(void){
 	}
 	
 	// win
-	if (scoreNum == 10){
-		//Wave_Killed();
+	if (scoreNum > 9){
+		ST7735_DrawBitmap(10, 126, win, 128, 128);
 	}
-	
-	
 }
 
 
