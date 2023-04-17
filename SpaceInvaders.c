@@ -518,7 +518,7 @@ int main(void){
 			ST7735_DrawString(1, 2, french_shoot_Instruction , 255);
 			ST7735_DrawString(1, 3, french_float_Instruction , 255);
 			ST7735_DrawString(1, 4, french_objective_Instruction , 255);
-			ST7735_DrawString(1, 5, french_objective_Instruction , 255);
+			ST7735_DrawString(1, 5, french_continue_Instruction , 255);
 			
 		}
 	}
